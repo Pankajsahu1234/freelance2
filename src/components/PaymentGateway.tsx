@@ -19,8 +19,22 @@ export default function PaymentGateway() {
   const navigate = useNavigate();
   const { product, quantity, totalAmount } = location.state as LocationState;
 
-  const UPI_ID = import.meta.env.VITE_UPI_ID || 'rishabhjhade060-1@oksbi';
-  const PAYEE_NAME = import.meta.env.VITE_PAYEE_NAME || 'Store Name';
+  // const UPI_ID = import.meta.env.VITE_UPI_ID || 'rishabhjhade060-1@oksbi';
+  // const PAYEE_NAME = import.meta.env.VITE_PAYEE_NAME || 'Store Name';
+
+  const MERCHANT_NAME = import.meta.env.VITE_MERCHANT_NAME || 'Mahaseth Mobile All Solution';
+  const TERMINAL_ID = import.meta.env.VITE_TERMINAL_ID || '2222610015419744';
+  const MERCHANT_ADDRESS = import.meta.env.VITE_MERCHANT_ADDRESS || 'Kshireshwarnath MC';
+  const KHALTI_MERCHANT_ID = import.meta.env.VITE_KHALTI_MERCHANT_ID || '';
+  const ESEWA_MERCHANT_CODE = import.meta.env.VITE_ESEWA_MERCHANT_CODE || '';
+  
+  // REQUIRED: Secret keys from .env
+  const KHALTI_SECRET_KEY = import.meta.env.VITE_KHALTI_SECRET_KEY || '';
+  const ESEWA_SECRET_KEY = import.meta.env.VITE_ESEWA_SECRET_KEY || '';
+
+  // URLs: Use UAT for testing; switch to production later
+  const KHALTI_BASE_URL = 'https://a.khalti.com/api/v2'; // Khalti sandbox
+  const ESEWA_EPAY_URL = 'https://uat.esewa.com.np/api/epay/main/v2/form'; // eSewa UAT
 
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -40,7 +54,7 @@ export default function PaymentGateway() {
     setIsLoading(true);
     const amount = totalAmount.toFixed(2);
     const transactionNote = `Order: ${product.title.substring(0, 30)}`;
-    const upiLink = `upi://pay?pa=${encodeURIComponent(UPI_ID)}&pn=${encodeURIComponent(PAYEE_NAME)}&am=${amount}&cu=INR&tn=${encodeURIComponent(transactionNote)}`;
+    const upiLink = `upi://pay?pa=${encodeURIComponent(TERMINAL_ID)}&pn=${encodeURIComponent(MERCHANT_NAME)}&am=${amount}&cu=INR&tn=${encodeURIComponent(transactionNote)}`;
 
     console.log('Opening UPI App with link:', upiLink);
 
@@ -91,7 +105,7 @@ export default function PaymentGateway() {
           <h2 className="text-2xl font-bold mb-2">Opening UPI App</h2>
           <p className="text-gray-600 mb-4">Your UPI app is opening. Please complete the payment.</p>
           <p className="text-sm text-gray-500">Amount: Rs. {totalAmount}</p>
-          <p className="text-sm text-gray-500 mt-2">Receiving UPI: {UPI_ID}</p>
+          <p className="text-sm text-gray-500 mt-2">Receiving UPI: {TERMINAL_ID}</p>
           <button
             onClick={() => {
               setIsProcessing(false);
