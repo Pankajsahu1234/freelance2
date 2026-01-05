@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ChevronRight, Banknote, Loader } from 'lucide-react';
+import CryptoJS from 'crypto-js'; // npm install crypto-js
 
 interface Product {
   image: string;
@@ -19,25 +20,20 @@ export default function PaymentGateway() {
   const navigate = useNavigate();
   const { product, quantity, totalAmount } = location.state as LocationState;
 
-  // const UPI_ID = import.meta.env.VITE_UPI_ID || 'rishabhjhade060-1@oksbi';
-  // const PAYEE_NAME = import.meta.env.VITE_PAYEE_NAME || 'Store Name';
-
   const MERCHANT_NAME = import.meta.env.VITE_MERCHANT_NAME || 'Mahaseth Mobile All Solution';
   const TERMINAL_ID = import.meta.env.VITE_TERMINAL_ID || '2222610015419744';
   const MERCHANT_ADDRESS = import.meta.env.VITE_MERCHANT_ADDRESS || 'Kshireshwarnath MC';
-  const KHALTI_MERCHANT_ID = import.meta.env.VITE_KHALTI_MERCHANT_ID || '';
-  const ESEWA_MERCHANT_CODE = import.meta.env.VITE_ESEWA_MERCHANT_CODE || '';
   
-  // REQUIRED: Secret keys from .env
-  const KHALTI_SECRET_KEY = import.meta.env.VITE_KHALTI_SECRET_KEY || '';
-  const ESEWA_SECRET_KEY = import.meta.env.VITE_ESEWA_SECRET_KEY || '';
+  // FonePay credentials (get secret from FonePay merchant dashboard)
+  const FONEPAY_SECRET_KEY = import.meta.env.VITE_FONEPAY_SECRET_KEY || '';
 
-  // URLs: Use UAT for testing; switch to production later
-  const KHALTI_BASE_URL = 'https://a.khalti.com/api/v2'; // Khalti sandbox
-  const ESEWA_EPAY_URL = 'https://uat.esewa.com.np/api/epay/main/v2/form'; // eSewa UAT
+  // FonePay endpoint (use dev for testing; switch to live for production)
+  const FONEPAY_ENDPOINT = 'https://dev-clientapi.fonepay.com/api/merchantRequest'; // Sandbox; live: https://clientapi.fonepay.com/api/merchantRequest
 
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedMethod, setSelectedMethod] = useState<string>('');
+  const fonepayFormRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     const handleFocus = () => {
@@ -50,16 +46,64 @@ export default function PaymentGateway() {
     return () => window.removeEventListener('focus', handleFocus);
   }, [isProcessing]);
 
-  const handleUPIPayment = () => {
+  const getReturnUrl = () => {
+    const baseUrl = window.location.origin;
+    return `${baseUrl}/payment-success`; // Update to your success route; handle verification there
+  };
+
+  const handleFonePay = () => {
+    if (!FONEPAY_SECRET_KEY) {
+      alert('FonePay secret key missing. Add VITE_FONEPAY_SECRET_KEY to .env (get from FonePay dashboard).');
+      return;
+    }
+
     setIsLoading(true);
-    const amount = totalAmount.toFixed(2);
-    const transactionNote = `Order: ${product.title.substring(0, 30)}`;
-    const upiLink = `upi://pay?pa=${encodeURIComponent(TERMINAL_ID)}&pn=${encodeURIComponent(MERCHANT_NAME)}&am=${amount}&cu=INR&tn=${encodeURIComponent(transactionNote)}`;
-
-    console.log('Opening UPI App with link:', upiLink);
-
+    setSelectedMethod('FonePay');
     setIsProcessing(true);
-    window.location.href = upiLink;
+
+    const prn = `PRN-${Date.now()}`; // Payment Reference Number
+    const amt = totalAmount.toFixed(2);
+    const crn = 'NPR'; // Currency
+    const dt = new Date().toISOString().slice(0, 10).replace(/-/g, ''); // YYYYMMDD
+    const r1 = encodeURIComponent(product.title.substring(0, 50)); // Remarks 1 (product name)
+    const r2 = encodeURIComponent(MERCHANT_NAME); // Remarks 2 (merchant name)
+    const ru = encodeURIComponent(getReturnUrl()); // Return URL
+    const pid = TERMINAL_ID; // Merchant ID (your terminal ID)
+    const md = 'P'; // Payment mode: P for normal payment
+
+    // Hash string: PID+MD+PRN+AMT+CRN+DT+R1+R2+RU
+    const hashString = `${pid}${md}${prn}${amt}${crn}${dt}${r1}${r2}${ru}`;
+    const hash = CryptoJS.HmacSHA512(hashString, FONEPAY_SECRET_KEY).toString(CryptoJS.enc.Hex).toUpperCase();
+
+    const form = fonepayFormRef.current;
+    if (form) {
+      form.innerHTML = '';
+      form.method = 'POST';
+      form.action = FONEPAY_ENDPOINT;
+
+      const fields = {
+        PID: pid,
+        MD: md,
+        PRN: prn,
+        AMT: amt,
+        CRN: crn,
+        DT: dt,
+        R1: r1,
+        R2: r2,
+        RU: ru,
+        DV: hash, // Digital Verification (hash)
+      };
+
+      Object.entries(fields).forEach(([key, value]) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = key;
+        input.value = value;
+        form.appendChild(input);
+      });
+
+      form.submit(); // Redirects to FonePay, which allows wallet selection (Khalti, eSewa, IME, etc.) and opens app if installed
+    }
 
     setTimeout(() => {
       setIsLoading(false);
@@ -73,18 +117,11 @@ export default function PaymentGateway() {
 
   const paymentMethods = [
     {
-      id: 'gpay',
-      name: 'Google Pay / PhonePe',
-      subtitle: 'UPI Payment - Opens instantly',
-      icon: 'https://www.gstatic.com/images/branding/product/1x/gpay_48dp.png',
-      action: handleUPIPayment,
-    },
-    {
-      id: 'upi',
-      name: 'Any UPI App',
-      subtitle: 'Paytm, BHIM, etc. - Opens instantly',
-      icon: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e1/UPI-Logo-vector.svg/200px-UPI-Logo-vector.svg.png',
-      action: handleUPIPayment,
+      id: 'fonepay',
+      name: 'FonePay (Universal Wallet)',
+      subtitle: 'Opens Khalti, eSewa, IME Pay, etc. - Enter PIN to pay',
+      icon: 'https://fonepay.com/assets/images/logo.svg', // FonePay logo
+      action: handleFonePay,
     },
     {
       id: 'cod',
@@ -102,10 +139,10 @@ export default function PaymentGateway() {
           <div className="flex justify-center mb-6">
             <Loader className="w-12 h-12 text-orange-600 animate-spin" />
           </div>
-          <h2 className="text-2xl font-bold mb-2">Opening UPI App</h2>
-          <p className="text-gray-600 mb-4">Your UPI app is opening. Please complete the payment.</p>
+          <h2 className="text-2xl font-bold mb-2">Redirecting to {selectedMethod}</h2>
+          <p className="text-gray-600 mb-4">Opening payment page. Select your wallet (Khalti, eSewa, IME Pay, etc.) and enter PIN.</p>
           <p className="text-sm text-gray-500">Amount: Rs. {totalAmount}</p>
-          <p className="text-sm text-gray-500 mt-2">Receiving UPI: {TERMINAL_ID}</p>
+          <p className="text-sm text-gray-500 mt-2">Product: {product.title}</p>
           <button
             onClick={() => {
               setIsProcessing(false);
@@ -122,6 +159,9 @@ export default function PaymentGateway() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
+      {/* Hidden form for FonePay */}
+      <form ref={fonepayFormRef} style={{ display: 'none' }} />
+
       <div className="max-w-3xl mx-auto bg-white rounded-lg shadow">
         <div className="border-b px-6 py-4">
           <h1 className="text-2xl font-bold">Select Payment Method</h1>
@@ -143,13 +183,11 @@ export default function PaymentGateway() {
                     <Banknote className="w-8 h-8 text-gray-600" />
                   )}
                 </div>
-
                 <div className="text-left">
                   <h3 className="text-lg font-semibold">{method.name}</h3>
                   <p className="text-sm text-gray-500">{method.subtitle}</p>
                 </div>
               </div>
-
               <ChevronRight className="text-gray-400" />
             </button>
           ))}
